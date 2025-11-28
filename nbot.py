@@ -7,8 +7,15 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeybo
 import sqlite3, io, csv, os, sys
 from datetime import datetime, timedelta
 
+# *** পরিবর্তন শুরু: BOT_TOKEN Environment Variable থেকে লোড করা হচ্ছে ***
+import os
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN environment variable not set")
+# *** পরিবর্তন শেষ ***
+
 # ================= CONFIG (PLEASE CHECK THESE) =================
-BOT_TOKEN = "8594708767:AAHR83LYAuEW1xKaDZjybbgPn2ln7C0FAI0"  # তোমার token
+# BOT_TOKEN = "8594708767:AAHR83LYAuEW1xKaDZjybbgPn2ln7C0FAI0"  # এই লাইনটি মুছে ফেলা হয়েছে
 ADMIN_ID = 6580170122  # তোমার Telegram id
 OTP_GROUP = "https://t.me/+1Zxobl56TBQyYTI1"
 DB_FILE = "panel_v2.db"
@@ -64,13 +71,24 @@ def atomic_assign_number(country_id, user_id):
     c = conn.cursor()
     try:
         c.execute("BEGIN IMMEDIATE")
-        c.execute("SELECT id, phone FROM numbers WHERE country_id=? AND status='available' LIMIT 1", (country_id,))
+        
+        # পূর্বের পরিবর্তন অনুযায়ী: R A N D O M L Y নম্বর নির্বাচন করা হচ্ছে
+        c.execute("""SELECT id, phone 
+                     FROM numbers 
+                     WHERE country_id=? AND status='available' 
+                     ORDER BY RANDOM() 
+                     LIMIT 1""", (country_id,))
+                     
         row = c.fetchone()
+        
         if not row:
             conn.commit(); conn.close(); return None
+            
         number_id, phone = row
+        
         c.execute("UPDATE numbers SET status='assigned' WHERE id=?", (number_id,))
         c.execute("INSERT INTO assignments (number_id, user_id) VALUES (?, ?)", (number_id, user_id))
+        
         conn.commit()
         
         # FIX: Ensure '+' is prefixed for copyability (user requirement)
@@ -134,6 +152,7 @@ def parse_numbers_from_bytes(content_bytes):
 def build_user_reply_kb():
     """
     Creates the permanent ReplyKeyboardMarkup buttons (Get Number, Available Country, Support).
+    (This is the bottom menu shown in both screenshots)
     """
     kb = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=False)
     kb.add(KeyboardButton("📲 Get Number"))
@@ -141,6 +160,9 @@ def build_user_reply_kb():
     return kb
 
 def build_countries_kb():
+    """
+    Creates the INLINE Keyboard buttons for country selection (Matches second screenshot UI).
+    """
     kb = InlineKeyboardMarkup()
     for cid, name, flag, dial, avail in get_countries():
         # FIX: Ensure flag/dial are present but number is not shown with '+'
@@ -215,6 +237,7 @@ def handle_start(msg):
 def handle_get_number(msg):
     """
     FIX: Handles both Get Number and Available Country buttons by showing the countries list.
+    (This function uses the INLINE keyboard, matching the second screenshot's UI)
     """
     rows = get_countries()
     if not rows:
@@ -223,6 +246,7 @@ def handle_get_number(msg):
         return
     
     kb = build_countries_kb()
+    # Sending two messages: first one for context, second one with the inline keyboard
     bot.send_message(msg.chat.id, "🌍 *Select your country:*")
     bot.send_message(msg.chat.id, "Click on the country button below to get an assigned number.", reply_markup=kb)
 
@@ -538,5 +562,5 @@ if __name__ == "__main__":
     except Exception:
         pass
 
-    print("Bot started (v2.3 fully fixed).")
+    print("Bot started (v2.3 fixed, with random number assignment and environment token).")
     bot.infinity_polling()
